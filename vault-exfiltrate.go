@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
@@ -14,6 +15,7 @@ import (
 
 import "golang.org/x/exp/mmap"
 
+import "github.com/hashicorp/vault/shamir"
 import "github.com/hashicorp/vault/vault"
 
 const (
@@ -143,18 +145,27 @@ func FindMasterKey(corePath string, keyRingPath string) ([]byte, error) {
 	return nil, fmt.Errorf("key not found")
 }
 
-func DecryptFile(keyRingFile string, vaultPath string, valueFile string) ([]byte, error) {
+func deserializeKeyring(keyRingFile string) (*vault.Keyring, error) {
 	keyRingJSON, err := ioutil.ReadFile(keyRingFile)
 	if err != nil {
 		return nil, err
 	}
 
-	ciphertext, err := ioutil.ReadFile(valueFile)
+	keyRing, err := vault.DeserializeKeyring(keyRingJSON)
 	if err != nil {
 		return nil, err
 	}
 
-	keyRing, err := vault.DeserializeKeyring(keyRingJSON)
+	return keyRing, nil
+}
+
+func DecryptFile(keyRingFile string, vaultPath string, valueFile string) ([]byte, error) {
+	keyRing, err := deserializeKeyring(keyRingFile)
+	if err != nil {
+		return nil, err
+	}
+
+	ciphertext, err := ioutil.ReadFile(valueFile)
 	if err != nil {
 		return nil, err
 	}
@@ -168,9 +179,25 @@ func DecryptFile(keyRingFile string, vaultPath string, valueFile string) ([]byte
 	return Decrypt(vaultPath, termKey.Value, ciphertext)
 }
 
+func SecretShares(keyRingFile string, numShares string) ([][]byte, error) {
+	threshold, err := strconv.ParseUint(numShares, 0, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	keyRing, err := deserializeKeyring(keyRingFile)
+	if err != nil {
+		return nil, err
+	}
+
+	t := int(threshold)
+	return shamir.Split(keyRing.MasterKey(), t, t)
+}
+
 func usage() {
 	os.Stderr.WriteString("usage: vault-exfiltrate extract core_file keyring_file\n")
 	os.Stderr.WriteString("or:    vault-exfiltrate decrypt keyring.json path/In/Vault data_file\n")
+	os.Stderr.WriteString("or:    vault-exfiltrate shares keyring.json num_shares\n")
 }
 
 func main_() int {
@@ -200,6 +227,19 @@ func main_() int {
 			panic(err)
 		}
 		os.Stdout.Write(plaintext)
+		return 0
+	} else if os.Args[1] == "shares" {
+		if len(os.Args) < 4 {
+			usage()
+			return 1
+		}
+		shares, err := SecretShares(os.Args[2], os.Args[3])
+		if err != nil {
+			panic(err)
+		}
+		for i := 0; i < len(shares); i++ {
+			fmt.Println(base64.StdEncoding.EncodeToString(shares[i]))
+		}
 		return 0
 	}
 
