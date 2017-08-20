@@ -7,6 +7,10 @@ vault-exfiltrate
     {"MasterKey":"+fbdF5OpHqVzGZP2Odbelk1sp3mhKcWT72pEc+abmYU=","Keys":[{"Term":1,"Version":1,"Value":"niAuiofcqFWha0FQhrqNZOSraD3zwIoCAs6nkJomfJs=","InstallTime":"2017-08-02T18:08:19.799452092-04:00"}]}
     $ vault-exfiltrate decrypt keyring.json logical/90828c10-fb92-12b8-78ca-a262f150b322/test_secret ciphertext_file
     {"secret_name":"secret_value"}
+    $ vault-exfiltrate shares keyring.json 3
+    nKNTMsqtc9hHwbn9x+/asTmqDoY6YqDGWxsvrLBCpqvm
+    174ZxDuptyYnEY+ghwBjtN/LrVdterKitpNki3uBe2fI
+    q+H2Gxn4OKkprWH8exr3lvtKcr27KPFP93roWf8TpzvA
 
 Its main purpose is to demonstrate the limitations of Vault's "two-man rule" threat model (and the Shamir secret-sharing scheme more generally) and inform discussion about potential hardening techniques for Vault.
 
@@ -35,7 +39,7 @@ I believe there is a contradiction between the following two [claims](https://ww
 
 `vault-exfiltrate decrypt` takes three arguments: a file containing the JSON keyring plaintext produced by `extract`, the logical path of an entry in the storage backend, and a file containing the exact binary ciphertext of the entry. If successful, it outputs the plaintext of the entry.
 
-`vault-exfiltrate shares` takes two arguments: a file containing the JSON keyring plaintext, and a threshold number of shares *n*. It outputs *n* new shares of the master key. This can be used as a key recovery tool: if the original shares of the master key have been lost, but an unsealed `vault` process is still running, this tool can produce new shares, after which the master key can be rotated with Vault's [rekey](https://www.vaultproject.io/guides/rekeying-and-rotating.html) subcommand.
+`vault-exfiltrate shares` takes two arguments: a file containing the JSON keyring plaintext, and a threshold number of shares *n*. It outputs *n* new shares of the master key. This can be used as a key recovery tool: if the original shares of the master key have been lost, but an unsealed `vault` process is still running, this tool can produce new shares. The shares can then be used to [rotate the master key](https://www.vaultproject.io/guides/rekeying-and-rotating.html), or to [generate a new root token](https://www.vaultproject.io/guides/generate-root.html), which provides [unrestricted application-level access](https://www.vaultproject.io/docs/concepts/tokens.html#root-tokens) to Vault. (Note that for both of these use cases, the threshold number must agree with the number Vault was originally configured to use; `vault rekey` can be used to change the threshold.)
 
 ## Implementation
 
