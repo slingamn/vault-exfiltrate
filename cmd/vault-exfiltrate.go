@@ -19,8 +19,8 @@ import "github.com/hashicorp/vault/shamir"
 import "github.com/hashicorp/vault/vault"
 
 const (
-	KeySize           = 32 // 256-bit key
-	AlignmentBoundary = 8  // assume malloc respects 64-bit word size?
+	KeySize           = 32             // 256-bit key
+	AlignmentBoundary = 8              // assume malloc respects 64-bit word size?
 	KeyringPath       = "core/keyring" // logical path where the keyring is stored
 )
 
