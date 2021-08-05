@@ -38,7 +38,12 @@ I believe there is a contradiction between the following two [claims](https://ww
 Clone `git clone https://github.com/lyvecloud/vault-exfiltrate`
 
 Run `make osx` for Mac OSX
+
 Run `make windows` for Windows
+
+Run `make linux` for Linux
+
+All builds under `builds/` folder
 
 ## Usage
 
