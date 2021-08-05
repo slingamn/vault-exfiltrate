@@ -33,6 +33,13 @@ I believe there is a contradiction between the following two [claims](https://ww
 1. In a standard Linux environment, it's straightforward for a malicious administrator (or an attacker with root-level access) to obtain the master and session keys.
 1. Most real-world deployments of the Shamir scheme implicitly require a trusted third party: the environment in which the secret is reconstructed, and which is then responsible for preventing the shareholders from stealing the secret.
 
+## How to Build
+
+Clone `git clone https://github.com/lyvecloud/vault-exfiltrate`
+
+Run `make osx` for Mac OSX
+Run `make windows` for Windows
+
 ## Usage
 
 `vault-exfiltrate` has three modes. `vault-exfiltrate extract` takes an ELF core file of the `vault` process as its first argument, and a file containing the exact binary ciphertext of the keyring as its second argument. The best way to obtain the core file is with the [gcore](http://man7.org/linux/man-pages/man1/gcore.1.html) utility, which is part of `gdb`; under the hood, it uses the [ptrace(2)](http://man7.org/linux/man-pages/man2/ptrace.2.html) system call to obtain the memory contents of the target process. The keyring is stored at the path `core/keyring` within Vault's logical key-value namespace; the method of retrieving the data will depend on the physical storage backend. For example, the `file` storage backend stores the keyring at the relative filesystem path `core/_keyring`, wrapped in JSON and base64; the `zookeeper` backend stores it as the data of the `core/_keyring` node; and the `mysql` backend stores it in the table row with `vault_key = 'core/keyring'`. If successful, it outputs the JSON plaintext of the keyring, including the master key and all active session keys.

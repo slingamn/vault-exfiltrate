@@ -9,18 +9,18 @@ default: linux
 
 .PHONY: linux
 linux:
-	@echo "Building vault_exfiltrate(vault_exfiltrate) binary to './vault_exfiltrate'"
-	@(cd cmd/; CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build --ldflags "-s -w -X 'main.BuildVersion=${BUILD_VERSION}'" -o ../vault_exfiltrate)
+	@echo "Building vault_exfiltrate(vault_exfiltrate) binary to './builds/vault_exfiltrate'"
+	@(cd cmd/; CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build --ldflags "-s -w -X 'main.BuildVersion=${BUILD_VERSION}'" -o ../builds/vault_exfiltrate)
 
 .PHONY: vault_exfiltrate_osx
 osx:
-	@echo "Building vault-exfiltrate(vault_exfiltrate_osx) binary to './vault_exfiltrate_osx'"
-	@(cd cmd/; CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build --ldflags "-s -w -X 'main.BuildVersion=${BUILD_VERSION}'" -o ../../vault_exfiltrate_osx)
+	@echo "Building vault-exfiltrate(vault_exfiltrate_osx) binary to './builds/vault_exfiltrate_osx'"
+	@(cd cmd/; CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build --ldflags "-s -w -X 'main.BuildVersion=${BUILD_VERSION}'" -o ../builds/vault_exfiltrate_osx)
 
 .PHONY: vault_exfiltrate_windows
 windows:
-	@echo "Building vault-exfiltrate(vault_exfiltrate_windows) binary to './vault_exfiltrate_windows.exe'"
-	@(cd cmd/; CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build --ldflags "-s -w -X 'main.BuildVersion=${BUILD_VERSION}'" -o ../../vault_exfiltrate_windows.exe)
+	@echo "Building vault-exfiltrate(vault_exfiltrate_windows) binary to './builds/vault_exfiltrate_windows.exe'"
+	@(cd cmd/; CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build --ldflags "-s -w -X 'main.BuildVersion=${BUILD_VERSION}'" -o ../builds/vault_exfiltrate_windows.exe)
 
 clean:
 	@echo "Cleaning up all the generated files"
