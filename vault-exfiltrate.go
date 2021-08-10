@@ -11,12 +11,13 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/hashicorp/vault/shamir"
+	"golang.org/x/exp/mmap"
+
+	// vendored vault components
+	"github.com/slingamn/vault-exfiltrate/vault_components"
 )
-
-import "golang.org/x/exp/mmap"
-
-import "github.com/hashicorp/vault/shamir"
-import "github.com/hashicorp/vault/vault"
 
 const (
 	KeySize           = 32 // 256-bit key
@@ -86,9 +87,9 @@ func decryptInternal(path string, gcm cipher.AEAD, ciphertext []byte) ([]byte, e
 	out := make([]byte, 0, len(raw)-gcm.NonceSize())
 
 	switch ciphertext[4] {
-	case vault.AESGCMVersion1:
+	case vault_components.AESGCMVersion1:
 		return gcm.Open(out, nonce, raw, nil)
-	case vault.AESGCMVersion2:
+	case vault_components.AESGCMVersion2:
 		return gcm.Open(out, nonce, raw, []byte(path))
 	default:
 		return nil, fmt.Errorf("version bytes mis-match")
@@ -145,13 +146,13 @@ func FindMasterKey(corePath string, keyRingPath string) ([]byte, error) {
 	return nil, fmt.Errorf("key not found")
 }
 
-func deserializeKeyring(keyRingFile string) (*vault.Keyring, error) {
+func deserializeKeyring(keyRingFile string) (*vault_components.Keyring, error) {
 	keyRingJSON, err := ioutil.ReadFile(keyRingFile)
 	if err != nil {
 		return nil, err
 	}
 
-	keyRing, err := vault.DeserializeKeyring(keyRingJSON)
+	keyRing, err := vault_components.DeserializeKeyring(keyRingJSON)
 	if err != nil {
 		return nil, err
 	}
