@@ -189,6 +189,7 @@ func DeserializeKeyring(buf []byte) (*Keyring, error) {
 	return k, nil
 }
 
+/*
 // N.B.:
 // Since Go 1.5 these are not reliable; see the documentation around the memzero
 // function. These are best-effort.
@@ -206,6 +207,7 @@ func (k *Keyring) Zeroize(keysToo bool) {
 		memzero(key.Value)
 	}
 }
+*/
 
 func (k *Keyring) AddEncryptionEstimate(term uint32, delta uint64) {
 	key := k.TermKey(term)
