@@ -261,7 +261,8 @@ func usage() {
 	os.Stderr.WriteString("usage: vault-exfiltrate extract vault_pid keyring_file\n")
 	os.Stderr.WriteString("or:    vault-exfiltrate extract-core core_file keyring_file\n")
 	os.Stderr.WriteString("or:    vault-exfiltrate decrypt keyring.json path/In/Vault data_file\n")
-	os.Stderr.WriteString("or:    vault-exfiltrate shares keyring.json num_shares\n")
+	os.Stderr.WriteString("or:    vault-exfiltrate split base64_encoded_value num_shares\n")
+	os.Stderr.WriteString("or:    vault-exfiltrate combine shares...\n")
 }
 
 func main_() int {
