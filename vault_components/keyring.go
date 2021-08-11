@@ -1,3 +1,5 @@
+// Copyright (c) 2015-2021 the Vault contributors
+// this file was originally hashicorp/vault : vault/keyring.go
 package vault_components
 
 import (
