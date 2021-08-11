@@ -31,6 +31,10 @@ I believe there is a contradiction between the following two [claims](https://ww
 1. In a standard Linux environment, it's straightforward for a malicious administrator (or an attacker with root-level access) to obtain the master and session keys.
 1. Most real-world deployments of the Shamir scheme implicitly require a trusted third party: the environment in which the secret is reconstructed, and which is then responsible for preventing the shareholders from stealing the secret.
 
+## Compilation
+
+To compile the project, clone the repository, [install the Go language if necessary](https://golang.org/dl/), then run `go build`; this will produce a binary named `vault-exfiltrate` in the working directory. For cross-compilation, you can add the usual environment variables, e.g. `GOOS=darwin GOARCH=arm64` to build for the Apple M1.
+
 ## Usage
 
 `vault-exfiltrate` has multiple modes. `vault-exfiltrate extract` takes the PID of a running `vault` process as its first argument, and a file containing the exact binary ciphertext of the keyring as its second argument. The keyring is stored at the path `core/keyring` within Vault's logical key-value namespace; the method of retrieving the data will depend on the physical storage backend. For example, the `file` storage backend stores the keyring at the relative filesystem path `core/_keyring`, wrapped in JSON and base64; the `zookeeper` backend stores it as the data of the `core/_keyring` node; and the `mysql` backend stores it in the table row with `vault_key = 'core/keyring'`. If successful, it outputs the JSON plaintext of the keyring, including the master key and all active session keys.
