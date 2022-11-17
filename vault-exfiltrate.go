@@ -123,6 +123,10 @@ func FindMasterKeyInRegion(coreMap io.ReaderAt, region Region, keyRing []byte) (
 		if err == nil {
 			return plaintext, err
 		}
+		plaintext, err = Decrypt(KeyringPath, keyBuf, keyRing[:len(keyRing)-1])
+		if err == nil {
+			return plaintext, err
+		}
 	}
 	return nil, fmt.Errorf("key not found")
 }
@@ -145,6 +149,10 @@ func FindMasterKeyInCore(corePath string, keyRingPath string) ([]byte, error) {
 
 	for i := 0; i < len(regions); i++ {
 		plaintext, err := FindMasterKeyInRegion(coreMap, regions[i], keyRing)
+		if err == nil {
+			return plaintext, err
+		}
+		plaintext, err = FindMasterKeyInRegion(coreMap, regions[i], keyRing[:len(keyRing)-1])
 		if err == nil {
 			return plaintext, err
 		}
@@ -176,6 +184,10 @@ func FindMasterKeyLive(pidStr string, keyRingPath string) (keyring []byte, err e
 
 	for i := 0; i < len(regions); i++ {
 		plaintext, err := FindMasterKeyInRegion(procMem, regions[i], keyRing)
+		if err == nil {
+			return plaintext, err
+		}
+		plaintext, err = FindMasterKeyInRegion(procMem, regions[i], keyRing[:len(keyRing)-1])
 		if err == nil {
 			return plaintext, err
 		}
