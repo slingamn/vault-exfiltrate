@@ -37,7 +37,14 @@ To compile the project, clone the repository, [install the Go language if necess
 
 ## Usage
 
-`vault-exfiltrate` has multiple modes. `vault-exfiltrate extract` takes the PID of a running unsealed `vault` process as its first argument, and a file containing the exact binary ciphertext of the keyring as its second argument. The keyring is stored at the path `core/keyring` within Vault's logical key-value namespace; the method of retrieving the data will depend on the physical storage backend. For example, the `file` storage backend stores the keyring at the relative filesystem path `core/_keyring`, wrapped in JSON and base64; the `zookeeper` backend stores it as the data of the `core/_keyring` node; and the `mysql` backend stores it in the table row with `vault_key = 'core/keyring'`. If successful, it outputs the JSON plaintext of the keyring, including the master key and all active session keys.
+`vault-exfiltrate` has multiple modes. `vault-exfiltrate extract` takes the PID of a running unsealed `vault` process as its first argument, and a file containing the exact binary ciphertext of the keyring as its second argument. The keyring is stored at the path `core/keyring` within Vault's logical key-value namespace; the method of retrieving the data will depend on the physical storage backend. If successful, it outputs the JSON plaintext of the keyring, including the master key and all active session keys.
+
+Here's how to retrieve the keyring in some common Vault backends:
+
+1. The `file` storage backend stores the keyring at the relative filesystem path `core/_keyring`, wrapped in JSON and base64
+1. The `zookeeper` backend stores it as the data of the `core/_keyring` node
+1. The `mysql` backend stores it in the table row with `vault_key = 'core/keyring'`.
+1. The `consul` backend typically stores it under the path `vault/core/keyring`. However, be aware that `consul kv get vault/core/keyring` will output a spurious newline at the end. You can use the [-base64 flag](https://developer.hashicorp.com/consul/commands/kv/get) or strip the final newline.
 
 `vault-exfiltrate extract-core` is similar, except that it takes the filename of an ELF core dump of an unsealed `vault` process instead of the PID of a running process. A suitable core file can be obtained with the [gcore](http://man7.org/linux/man-pages/man1/gcore.1.html) utility, which is part of `gdb`.
 
