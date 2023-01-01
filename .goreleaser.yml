@@ -1,0 +1,26 @@
+# .goreleaser.yml
+project_name: vault-exfiltrate
+builds:
+  - main: vault-exfiltrate.go
+    binary: vault-exfiltrate
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+
+archives:
+  -
+    name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    format: tar.gz
+    replacements:
+      darwin: macos
+    files:
+      - README.md
+      - LICENSE
+    wrap_in_directory: true
+checksum:
+  name_template: "{{ .ProjectName }}-{{ .Version }}-checksums.txt"
